@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>IoT Tracker Map</title>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+    <style>
+      body,
+      html {
+        margin: 0;
+        padding: 0;
+        height: 100%;
+      }
+      #map {
+        height: 100%;
+      }
+      #controls {
+        position: absolute;
+        top: 10px;
+        left: 10px;
+        z-index: 1000;
+        background: white;
+        padding: 10px;
+        border-radius: 8px;
+        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+      }
+    </style>
+  </head>
+  <body>
+    <div id="controls">
+      <button id="startBtn">Start Tracking</button>
+      <button id="stopBtn" disabled>Stop Tracking</button>
+    </div>
+    <div id="map"></div>
+
+    <!-- (Potongan awal HTML tetap sama) -->
+    <script type="module">
+      import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+      import {
+        getDatabase,
+        ref,
+        onChildAdded,
+      } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+
+     const firebaseConfig = {
+    apiKey: "AIzaSyBiqN9R8vA1Am544mu4emFAymqBdx3PN4w",
+    authDomain: "genzmaps.firebaseapp.com",
+    databaseURL: "https://genzmaps-default-rtdb.asia-southeast1.firebasedatabase.app",
+    projectId: "genzmaps",
+    storageBucket: "genzmaps.firebasestorage.app",
+    messagingSenderId: "775439050900",
+    appId: "1:775439050900:web:dc387aa5f133547fd06c81"
+  };
+
+      const app = initializeApp(firebaseConfig);
+      const db = getDatabase(app);
+      const dataRef = ref(db, "/data_tracking");
+
+      const map = L.map("map").setView([-8.65, 115.22], 13);
+      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        attribution: "&copy; OpenStreetMap contributors",
+      }).addTo(map);
+
+      let pathCoords = [];
+      let polyline = L.polyline([], { color: "red" }).addTo(map);
+      let tracking = false;
+      let blueMarkerInterval = null;
+
+      let blueMarkers = [];
+      const maxMarkers = 50;
+
+      let latestRedMarker = null;
+
+      function clearMapData() {
+        pathCoords = [];
+        polyline.setLatLngs([]);
+
+        if (latestRedMarker) {
+          map.removeLayer(latestRedMarker);
+          latestRedMarker = null;
+        }
+
+        blueMarkers.forEach((b) => map.removeLayer(b));
+        blueMarkers = [];
+      }
+
+      document.getElementById("startBtn").onclick = () => {
+        tracking = true;
+        clearMapData();
+
+        document.getElementById("startBtn").disabled = true;
+        document.getElementById("stopBtn").disabled = false;
+
+        let latestData = null; // Tambahkan di luar fungsi, untuk menyimpan data terbaru
+
+        onChildAdded(dataRef, (snapshot) => {
+          const data = snapshot.val();
+          if (data.latitude && data.longitude) {
+            const position = [data.latitude, data.longitude];
+
+            // Simpan data terakhir untuk marker biru
+            latestData = { ...data };
+
+            const popup = `
+      <strong>${data.tanggal} ${data.waktu}</strong><br/>
+      🌡 Suhu: ${data.suhu} °C<br/>
+      💧 Kelembaban: ${data.kelembaban} %<br/>
+      📍 Lokasi: (${data.latitude.toFixed(5)}, ${data.longitude.toFixed(
+              5
+            )})<br/>
+      🚗 Kecepatan: ${data.kecepatan} km/h<br/>
+      🧭 Arah: ${data.arah}°<br/>
+      🔁 Gyro: ${data.gyro_x.toFixed(2)} / ${data.gyro_y.toFixed(
+              2
+            )} / ${data.gyro_z.toFixed(2)}<br/>
+      📈 Accel: ${data.accel_x.toFixed(2)} / ${data.accel_y.toFixed(
+              2
+            )} / ${data.accel_z.toFixed(2)}
+    `;
+
+            if (tracking) {
+              pathCoords.push(position);
+              polyline.setLatLngs(pathCoords);
+            }
+
+            if (!tracking) {
+              if (latestRedMarker) {
+                map.removeLayer(latestRedMarker);
+              }
+              latestRedMarker = L.marker(position).addTo(map).bindPopup(popup);
+            }
+          }
+        });
+      };
+
+      document.getElementById("stopBtn").onclick = () => {
+        tracking = false;
+        clearInterval(blueMarkerInterval);
+
+        document.getElementById("startBtn").disabled = false;
+        document.getElementById("stopBtn").disabled = true;
+      };
+
+      onChildAdded(dataRef, (snapshot) => {
+        const data = snapshot.val();
+        if (data.latitude && data.longitude) {
+          const position = [data.latitude, data.longitude];
+
+          const popup = `
+        <strong>${data.tanggal} ${data.waktu}</strong><br/>
+        🌡 Suhu: ${data.suhu} °C<br/>
+        💧 Kelembaban: ${data.kelembaban} %<br/>
+        📍 Lokasi: (${data.latitude.toFixed(5)}, ${data.longitude.toFixed(
+            5
+          )})<br/>
+        🚗 Kecepatan: ${data.kecepatan} km/h<br/>
+        🧭 Arah: ${data.arah}°<br/>
+        🔁 Gyro: ${data.gyro_x.toFixed(2)} / ${data.gyro_y.toFixed(
+            2
+          )} / ${data.gyro_z.toFixed(2)}<br/>
+        📈 Accel: ${data.accel_x.toFixed(2)} / ${data.accel_y.toFixed(
+            2
+          )} / ${data.accel_z.toFixed(2)}
+      `;
+
+          if (tracking) {
+            // Tambahkan ke polyline
+            pathCoords.push(position);
+            polyline.setLatLngs(pathCoords);
+
+            // Tambahkan marker biru dengan popup khusus untuk data ini
+            const blue = L.circleMarker(position, {
+              color: "blue",
+              radius: 6,
+              fillOpacity: 0.7,
+            })
+              .addTo(map)
+              .bindPopup(popup);
+
+            blueMarkers.push(blue);
+            if (blueMarkers.length > maxMarkers) {
+              const oldBlue = blueMarkers.shift();
+              map.removeLayer(oldBlue);
+            }
+          }
+
+          // Marker merah (hanya satu saat tidak tracking)
+          if (!tracking) {
+            if (latestRedMarker) {
+              map.removeLayer(latestRedMarker);
+            }
+            latestRedMarker = L.marker(position).addTo(map).bindPopup(popup);
+          }
+        }
+      });
+    </script>
+  </body>
+</html>
